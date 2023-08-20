@@ -1,4 +1,4 @@
-# Huion H420 Tablet mapper
+# Tablet mapper
 
 ## References
 
