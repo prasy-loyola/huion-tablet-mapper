@@ -1,4 +1,5 @@
 #include "raylib.h"
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -8,13 +9,22 @@ int main(void) {
   Color bg_color = {.a = 255, .r = 0x18, .g = 0x18, .b = 0x18};
   const char *TABLET_STYLUS_NAME = "HUION H420 Pen stylus";
   const char *TABLET_NAME = "HUION H420 Pad pad";
+  const char *MAP_KEY = "xsetwacom --set \"%s\" Button %d \"key %s\"";
+  const char *UPDATE_COORD_TRANS_MATRIX =
+      "xinput set-prop \"%s\" "
+      "--type=float "
+      "\"Coordinate Transformation Matrix\" "
+      "%f 0 %f 0 %f %f 0 0 1";
 
   SetConfigFlags(FLAG_WINDOW_RESIZABLE);
   SetTargetFPS(60);
   InitWindow(800, 450, "Huion Tablet mapper");
   char text[3000] = {0};
   char info[3000] = {0};
+  bool mapped = false;
   while (!WindowShouldClose()) {
+    int curr_width = GetRenderWidth();
+
     if (IsKeyDown(KEY_M)) {
       int monitor_count = GetMonitorCount();
       int screen_width = 0;
@@ -28,7 +38,7 @@ int main(void) {
           screen_height = GetMonitorHeight(i) + monitor_pos.y;
         }
       }
-      
+
       int curr_height = GetRenderHeight();
       int curr_width = GetRenderWidth();
       Vector2 window_pos = GetWindowPosition();
@@ -41,27 +51,25 @@ int main(void) {
       // c3 = touch_area_y_offset / total_height
       float c3 = window_pos.y / screen_height;
 
-      sprintf(text,
-              "xinput set-prop \"%s\" "
-              "--type=float "
-              "\"Coordinate Transformation Matrix\" "
-              "%f 0 %f 0 %f %f 0 0 1",
-              TABLET_NAME, c0, c1, c2, c3);
+      sprintf(text, UPDATE_COORD_TRANS_MATRIX, TABLET_NAME, c0, c1, c2, c3);
       printf("%s\n", text);
-      int result = system(text);
-      if (result != 0) {
-        DrawText("Error", 10, 190, 25, RED);
+      int result1 = system(text);
+      mapped = true;
+      if (result1 != 0) {
+        mapped = false;
       }
 
-      sprintf(text,
-              "xinput set-prop \"%s\" "
-              "--type=float "
-              "\"Coordinate Transformation Matrix\" "
-              "%f 0 %f 0 %f %f 0 0 1",
-              TABLET_STYLUS_NAME, c0, c1, c2, c3);
+      sprintf(text, UPDATE_COORD_TRANS_MATRIX, TABLET_STYLUS_NAME, c0, c1, c2,
+              c3);
       printf("%s\n", text);
-      // TODO: handle the failure case
-      system(text);
+      int result2 = system(text);
+
+      if (result2 != 0 || result1 != 0) {
+        mapped = false;
+        sprintf(info, "ERROR: mapping failed");
+      } else {
+        mapped = true;
+      }
     }
     BeginDrawing();
     ClearBackground(bg_color);
@@ -69,10 +77,11 @@ int main(void) {
              "whichever area you want to map to the tablet\n"
              "Press 'M' key when you are happy with the area\n",
              10, 100, 20, LIGHTGRAY);
-    if (text[0]) {
-        DrawText("Mapped to the area!! \n", 10, 190, 25, GREEN);
+    if (mapped) {
+      DrawText("Mapped to the area!! \n", 10, 190, 25, GREEN);
+    } else {
+      DrawText(info, 10, 190, 25, RED);
     }
-
     EndDrawing();
   }
 
