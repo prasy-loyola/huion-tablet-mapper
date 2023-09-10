@@ -1,4 +1,5 @@
 #include "raylib.h"
+#include <math.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -22,9 +23,19 @@ int main(void) {
   char text[3000] = {0};
   char info[3000] = {0};
   bool mapped = false;
+  int prev_mapped_width = GetRenderWidth();
+  int prev_mapped_height = GetRenderHeight();
   while (!WindowShouldClose()) {
-    int curr_width = GetRenderWidth();
-
+    if (IsWindowResized()) {
+      int curr_width = GetRenderWidth();
+      int curr_height = GetRenderHeight();
+      if (abs(curr_width - prev_mapped_width) > 2 ||
+          abs(curr_height - prev_mapped_height) > 2) {
+        SetWindowSize(curr_width, floorf(curr_width * (2.23 / 4)));
+        prev_mapped_width = curr_width;
+        prev_mapped_height = GetRenderHeight();
+      }
+    }
     if (IsKeyDown(KEY_M)) {
       int monitor_count = GetMonitorCount();
       int screen_width = 0;
@@ -66,10 +77,19 @@ int main(void) {
 
       if (result2 != 0 || result1 != 0) {
         mapped = false;
-        sprintf(info, "ERROR: mapping failed");
+        sprintf(info, "ERROR: failed mapping tablet to area");
       } else {
         mapped = true;
       }
+
+      sprintf(text, MAP_KEY, TABLET_NAME, 1, "c");
+      system(text);
+      sprintf(text, MAP_KEY, TABLET_NAME, 2, "k");
+      system(text);
+      sprintf(text, MAP_KEY, TABLET_NAME, 3, "e");
+      system(text);
+      sprintf(text, MAP_KEY, TABLET_STYLUS_NAME, 3, "z");
+      system(text);
     }
     BeginDrawing();
     ClearBackground(bg_color);
