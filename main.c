@@ -5,13 +5,13 @@
 #include <stdlib.h>
 #include <string.h>
 
-int main(void) {
+int main(int argc, char **argv) {
 
-  Color bg_color = {.a = 255, .r = 0x18, .g = 0x18, .b = 0x18};
-  const char *TABLET_STYLUS_NAME = "HUION H420 Pen stylus";
-  const char *TABLET_NAME = "HUION H420 Pad pad";
-  const char *MAP_KEY = "xsetwacom --set \"%s\" Button %d \"key %s\"";
-  const char *UPDATE_COORD_TRANS_MATRIX =
+  Color bg_color = DARKGRAY;
+  const static char *TABLET_STYLUS_NAME = "HUION H420 Pen stylus";
+  const static char *TABLET_NAME = "HUION H420 Pad pad";
+  const static char *MAP_KEY = "xsetwacom --set \"%s\" Button %d \"key %s\"";
+  const static char *UPDATE_COORD_TRANS_MATRIX =
       "xinput set-prop \"%s\" "
       "--type=float "
       "\"Coordinate Transformation Matrix\" "
@@ -29,12 +29,10 @@ int main(void) {
     if (IsWindowResized()) {
       int curr_width = GetRenderWidth();
       int curr_height = GetRenderHeight();
-      if (abs(curr_width - prev_mapped_width) > 2 ||
-          abs(curr_height - prev_mapped_height) > 2) {
-        SetWindowSize(curr_width, floorf(curr_width * (2.23 / 4)));
-        prev_mapped_width = curr_width;
-        prev_mapped_height = GetRenderHeight();
-      }
+      int new_height = floorf(curr_width * (2.23 / 4));
+      prev_mapped_width = curr_width;
+      prev_mapped_height = new_height;
+      SetWindowSize(curr_width, new_height);
     }
     if (IsKeyDown(KEY_M)) {
       int monitor_count = GetMonitorCount();
