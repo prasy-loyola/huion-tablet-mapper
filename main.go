@@ -84,7 +84,7 @@ func (input Input) mapButtons() error {
 
 	for button, key := range input.config.Buttons {
 		setButtonCmd := exec.Command("xsetwacom", "--set", strconv.Itoa(input.id),
-			"Button", button, "key "+key)
+			"Button", button, key)
 		defer setButtonCmd.Wait()
 		if out, err := setButtonCmd.CombinedOutput(); err != nil {
 			log.Printf("ERROR: %s", out)
@@ -228,7 +228,7 @@ func main() {
 
             for _, key := range keys {
 			    y += 25.0
-                gui.Label(rl.NewRectangle(x + 10, y, 100, 20), fmt.Sprintf("Button %s: '%s'", key, inputs[i].config.Buttons[key] ))
+                gui.Label(rl.NewRectangle(x + 10, y, 200, 20), fmt.Sprintf("Button %s: '%s'", key, inputs[i].config.Buttons[key] ))
             }
 		}
 		y += 30.0
