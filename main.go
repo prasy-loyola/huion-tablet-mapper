@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"io/fs"
 	"log"
 	"os"
 	"os/exec"
@@ -31,30 +32,36 @@ type InputConfig struct {
 
 const configFileName = ".tablet-mapper.conf"
 
-func readConfig() (TabletMapperConfig, error) {
+func readConfigFromFile(confPath string) (TabletMapperConfig, error) {
+	if file, err := os.Open(confPath); err != nil {
+		log.Printf("INFO: couldn't read from config file '%s'. %s", confPath, err.Error())
+	} else {
+		defer file.Close()
+		if buf, err := io.ReadAll(file); err != nil {
+			log.Printf("INFO: read config %s", err.Error())
+		} else {
+			var config TabletMapperConfig
+			if err = json.Unmarshal(buf, &config); err != nil {
+				log.Printf("INFO: couldn't read config file '%s'. %s", confPath, err.Error())
+			} else {
+				log.Printf("INFO: read config %v", config)
+				return config, nil
+			}
+		}
+	}
+	return nil, fmt.Errorf("ERROR: Couldn't read config file '%s'", confPath)
+
+}
+
+func getDefaultConfpath() (string, error) {
 	if user, err := user.Current(); err != nil {
 		log.Printf("INFO: couldn't read current user %s ", err.Error())
 	} else {
 		confPath := path.Join(user.HomeDir, configFileName)
 		log.Printf("INFO: reading from file %s", confPath)
-		if file, err := os.Open(confPath); err != nil {
-			log.Printf("INFO: couldn't read from config file %s. %s", confPath, err.Error())
-		} else {
-			defer file.Close()
-			if buf, err := io.ReadAll(file); err != nil {
-				log.Printf("INFO: read config %s", err.Error())
-			} else {
-				var config TabletMapperConfig
-				if err = json.Unmarshal(buf, &config); err != nil {
-					log.Printf("INFO: couldn't read config file %s. %s", confPath, err.Error())
-				} else {
-					log.Printf("INFO: read config %v", config)
-					return config, nil
-				}
-			}
-		}
+		return confPath, nil
 	}
-	return nil, fmt.Errorf("ERROR: Couldn't read config file %s", configFileName)
+	return "", fmt.Errorf("ERROR: Couldn't get default config file %s", configFileName)
 
 }
 
@@ -72,7 +79,7 @@ func writeConfig(config TabletMapperConfig) {
 			if _, err = file.Write(buf); err != nil {
 				log.Printf("INFO: couldn't write to config file %s. %s", confPath, err.Error())
 			}
-            //log.Printf("INFO: wrote config: %s",buf )
+			//log.Printf("INFO: wrote config: %s",buf )
 			file.Sync()
 		}
 	}
@@ -172,14 +179,38 @@ func getInputs() ([]Input, error) {
 }
 
 func main() {
+
+	args := os.Args
+	climode := false
+	if len(args) > 1 {
+		log.Printf("INFO: using cli mode as arguments are passed")
+		if args[1] == "-h" {
+			fmt.Printf("Usage: \n %s <config-file-path>\n", args[0])
+			return
+		} else {
+			climode = true
+		}
+	}
+
 	var inputs []Input
 	var err error
 
 	var config TabletMapperConfig
 
-	if config, err = readConfig(); err != nil {
+	var confPath string
+
+	if climode {
+		confPath = args[1]
+	} else {
+		if confPath, err = getDefaultConfpath(); err != nil {
+			log.Printf("WARN: Couldn't load config %s", err.Error())
+		}
+
+	}
+	if config, err = readConfigFromFile(confPath); err != nil {
 		log.Printf("WARN: Couldn't load config %s", err.Error())
 	}
+
 	if inputs, err = getInputs(); err != nil {
 		log.Fatalf("ERROR: Couldn't read inputs %s", err.Error())
 	}
@@ -189,11 +220,19 @@ func main() {
 	}
 
 	log.Printf("INFO: inputs '%v'", inputs)
+
+	if climode {
+		return
+	}
+	rl.SetTraceLogLevel(rl.LogNone)
 	rl.SetConfigFlags(rl.FlagWindowResizable)
+	rl.SetConfigFlags(rl.FlagMsaa4xHint)
 	rl.InitWindow(800, 800, "Tablet Mapper")
 	defer rl.CloseWindow()
-
-	font := rl.LoadFont("fonts/pixantiqua.ttf")
+	fontFilePath := ".temp.ttf"
+	err = os.WriteFile(fontFilePath, FontAsBytes, fs.ModePerm)
+	font := rl.LoadFontEx(fontFilePath, 30, nil)
+	rl.SetTextureFilter(font.Texture, rl.FilterBilinear)
 	defer rl.UnloadFont(font)
 
 	rl.SetTargetFPS(60)
@@ -220,25 +259,25 @@ func main() {
 			y += 25.0
 			inputs[i].selected = gui.CheckBox(rl.NewRectangle(x, y, 20, 20), inputs[i].name, inputs[i].selected)
 
-            keys := make([]string, 0, len(inputs[i].config.Buttons))
-            for k := range inputs[i].config.Buttons {
-                keys = append(keys, k)
-            }
-            sort.Strings(keys)
+			keys := make([]string, 0, len(inputs[i].config.Buttons))
+			for k := range inputs[i].config.Buttons {
+				keys = append(keys, k)
+			}
+			sort.Strings(keys)
 
-            for _, key := range keys {
-			    y += 25.0
-                gui.Label(rl.NewRectangle(x + 10, y, 200, 20), fmt.Sprintf("Button %s: '%s'", key, inputs[i].config.Buttons[key] ))
-            }
+			for _, key := range keys {
+				y += 25.0
+				gui.Label(rl.NewRectangle(x+10, y, 200, 20), fmt.Sprintf("Button %s: '%s'", key, inputs[i].config.Buttons[key]))
+			}
 		}
 		y += 30.0
 
 		if loadConfig := gui.Button(rl.NewRectangle(x, y, 200, 40), "Load Config"); loadConfig {
-            config, _ := readConfig()
-            for i, _ := range inputs {
-                input := &inputs[i]
+			config, _ := readConfigFromFile(confPath)
+			for i, _ := range inputs {
+				input := &inputs[i]
 				if input.selected {
-                    input.config = config[input.name]
+					input.config = config[input.name]
 					if err := input.mapToArea(input.config.CoordMatrix); err != nil {
 					}
 					if err := input.mapButtons(); err != nil {
@@ -249,7 +288,7 @@ func main() {
 		y += 50.0
 
 		if mapArea := gui.Button(rl.NewRectangle(x, y, 200, 40), "Map Current Area"); mapArea {
-            for _, input := range inputs {
+			for _, input := range inputs {
 				if input.selected {
 					if err := input.mapToArea(getCoordMappingFromCurrentWindow()); err != nil {
 					}
@@ -266,7 +305,7 @@ func main() {
 				if inputs[i].selected {
 					if err := inputs[i].mapToArea(coordMatrix); err != nil {
 					}
-                    inputs[i].config.CoordMatrix = coordMatrix
+					inputs[i].config.CoordMatrix = coordMatrix
 					config[inputs[i].name] = inputs[i].config
 				}
 			}
@@ -274,4 +313,5 @@ func main() {
 		}
 		rl.EndDrawing()
 	}
+
 }
