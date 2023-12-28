@@ -114,7 +114,7 @@ func (input Input) mapToArea(matrix [4]float32) error {
 	return nil
 }
 
-func getCoordMappingFromCurrentWindow() [4]float32 {
+func getCoordMappingForWindow(x, y, w, h int) [4]float32 {
 	monitor_count := rl.GetMonitorCount()
 	screen_width := 0
 	screen_height := 0
@@ -128,20 +128,30 @@ func getCoordMappingFromCurrentWindow() [4]float32 {
 		}
 	}
 
-	curr_height := rl.GetRenderHeight()
-	curr_width := rl.GetRenderWidth()
-	window_pos := rl.GetWindowPosition()
+	window_posX := float32(x)
+	window_posY := float32(y)
+	curr_width := float32(w)
+	curr_height := float32(h)
+
 	// c0 = touch_area_width / total_width
-	c0 := float32(curr_width) / float32(screen_width)
+	c0 := curr_width / float32(screen_width)
 	// c2 = touch_area_height / total_height
-	c2 := float32(curr_height) / float32(screen_height)
+	c2 := curr_height / float32(screen_height)
 	// c1 = touch_area_x_offset / total_width
-	c1 := window_pos.X / float32(screen_width)
+	c1 := window_posX / float32(screen_width)
 	// c3 = touch_area_y_offset / total_height
-	c3 := window_pos.Y / float32(screen_height)
+	c3 := window_posY / float32(screen_height)
 	//xinput set-prop "<input-name>" --type=float "Coordinate Transformation Matrix" %f 0 %f 0 %f %f 0 0 1
 
 	return [4]float32{c0, c1, c2, c3}
+
+}
+
+func getCoordMappingFromCurrentWindow() [4]float32 {
+	curr_height := rl.GetRenderHeight()
+	curr_width := rl.GetRenderWidth()
+	window_pos := rl.GetWindowPosition()
+	return getCoordMappingForWindow(int(window_pos.X), int(window_pos.Y), curr_width, curr_height)
 }
 
 func getInputs() ([]Input, error) {
@@ -178,7 +188,76 @@ func getInputs() ([]Input, error) {
 	return tablets, err
 }
 
+type window struct {
+	id          string
+	desktopId   int
+	xoffset     int
+	yoffset     int
+	width       int
+	height      int
+	machineName string
+	title       string
+	appName     string
+}
+
+func getWindowList() []window {
+
+	cmd := exec.Command("wmctrl", "-l", "-G")
+	defer cmd.Wait()
+	var out []byte
+	var err error
+	if out, err = cmd.CombinedOutput(); err != nil {
+		log.Printf("ERROR: %s", out)
+	}
+
+	windowList := make([]window, 0)
+	readNextWord := func(text string) (string, string) {
+		word := make([]byte, 0)
+		i := 0
+		var b byte
+		for i, b = range []byte(text) {
+			if b == ' ' {
+				break
+			}
+			word = append(word, b)
+		}
+		return string(word), string(text[i:len(text)])
+	}
+
+	for _, line := range strings.Split(string(out), "\n") {
+		if strings.TrimSpace(line) == "" {
+			break
+		}
+		rest := line
+		w := window{}
+		id, rest := readNextWord(strings.TrimSpace(rest))
+		desktopId, rest := readNextWord(strings.TrimSpace(rest))
+		xoffset, rest := readNextWord(strings.TrimSpace(rest))
+		yoffset, rest := readNextWord(strings.TrimSpace(rest))
+		width, rest := readNextWord(strings.TrimSpace(rest))
+		height, rest := readNextWord(strings.TrimSpace(rest))
+		machineName, rest := readNextWord(strings.TrimSpace(rest))
+		title := strings.TrimSpace(rest)
+
+		w.id = id
+		w.desktopId, _ = strconv.Atoi(desktopId)
+		w.xoffset, _ = strconv.Atoi(xoffset)
+		w.yoffset, _ = strconv.Atoi(yoffset)
+		w.width, _ = strconv.Atoi(width)
+		w.height, _ = strconv.Atoi(height)
+		w.machineName = machineName
+		w.title = title
+		chunks := strings.Split(title, " ")
+		w.appName = chunks[len(chunks)-1]
+		windowList = append(windowList, w)
+	}
+
+	return windowList
+}
 func main() {
+	windowList := getWindowList()
+
+	log.Printf("INFO: %+v", windowList)
 
 	args := os.Args
 	climode := false
@@ -224,6 +303,7 @@ func main() {
 	if climode {
 		return
 	}
+
 	rl.SetTraceLogLevel(rl.LogNone)
 	rl.SetConfigFlags(rl.FlagWindowResizable)
 	rl.SetConfigFlags(rl.FlagMsaa4xHint)
@@ -241,6 +321,9 @@ func main() {
 		input   *Input
 		display bool
 	}
+
+	var selectedWindow int32
+	windowEditMode := false
 
 	for !rl.WindowShouldClose() {
 		if rl.IsWindowResized() {
@@ -285,6 +368,10 @@ func main() {
 				}
 			}
 		}
+		
+        if saveConfig := gui.Button(rl.NewRectangle(x + 250, y , 200, 40), "Save Current Config"); saveConfig {
+			writeConfig(config)
+		}
 		y += 50.0
 
 		if mapArea := gui.Button(rl.NewRectangle(x, y, 200, 40), "Map Current Area"); mapArea {
@@ -297,20 +384,42 @@ func main() {
 				}
 			}
 		}
-		y += 50
 
-		if saveConfig := gui.Button(rl.NewRectangle(x, y, 200, 40), "Save Current Config"); saveConfig {
-			coordMatrix := getCoordMappingFromCurrentWindow()
+		y += 50
+		options := ""
+		first := true
+		for _, w := range windowList {
+			if !first {
+				options += "\n"
+			}
+			first = false
+			options += w.appName
+		}
+
+		gui.Unlock()
+		if gui.DropdownBox(rl.NewRectangle(x, y, 200, 40), options, &selectedWindow, windowEditMode) {
+			windowEditMode = !windowEditMode
+		}
+
+		if gui.Button(rl.NewRectangle(x+205, y, 40, 40), "(R)") {
+			windowList = getWindowList()
+		}
+
+		if gui.Button(rl.NewRectangle(x+250, y, 200, 40), "Map to Window") {
+			window := windowList[selectedWindow]
+			coordMatrix := getCoordMappingForWindow(window.xoffset, window.yoffset+30, window.width, window.height-60)
 			for i := 0; i < len(inputs); i++ {
 				if inputs[i].selected {
 					if err := inputs[i].mapToArea(coordMatrix); err != nil {
 					}
 					inputs[i].config.CoordMatrix = coordMatrix
 					config[inputs[i].name] = inputs[i].config
+					if err := inputs[i].mapButtons(); err != nil {
+					}
 				}
 			}
-			writeConfig(config)
 		}
+
 		rl.EndDrawing()
 	}
 
