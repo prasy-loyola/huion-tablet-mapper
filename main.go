@@ -26,25 +26,25 @@ type Input struct {
 }
 
 type InputConfig struct {
-	Buttons     map[string]string `json:"buttons"`
-	CoordMatrix [4]float32        `json:"coordMatrix"`
+	Buttons     map[string]string  `json:"buttons"`
+	CoordMatrix CoordinationMatrix `json:"coordMatrix"`
 }
 
 const configFileName = ".tablet-mapper.conf"
 
 func readConfigFromFile(confPath string) (TabletMapperConfig, error) {
 	if file, err := os.Open(confPath); err != nil {
-		log.Printf("INFO: couldn't read from config file '%s'. %s", confPath, err.Error())
+		log.Printf("ERROR: couldn't read from config file '%s'. %s", confPath, err.Error())
 	} else {
 		defer file.Close()
 		if buf, err := io.ReadAll(file); err != nil {
-			log.Printf("INFO: read config %s", err.Error())
+			log.Printf("ERROR: read config %s", err.Error())
 		} else {
 			var config TabletMapperConfig
 			if err = json.Unmarshal(buf, &config); err != nil {
-				log.Printf("INFO: couldn't read config file '%s'. %s", confPath, err.Error())
+				log.Printf("ERROR: couldn't read config file '%s'. %s", confPath, err.Error())
 			} else {
-				log.Printf("INFO: read config %v", config)
+				//log.Printf("INFO: read config %v", config)
 				return config, nil
 			}
 		}
@@ -55,7 +55,7 @@ func readConfigFromFile(confPath string) (TabletMapperConfig, error) {
 
 func getDefaultConfpath() (string, error) {
 	if user, err := user.Current(); err != nil {
-		log.Printf("INFO: couldn't read current user %s ", err.Error())
+		log.Printf("ERROR: couldn't read current user %s ", err.Error())
 	} else {
 		confPath := path.Join(user.HomeDir, configFileName)
 		log.Printf("INFO: reading from file %s", confPath)
@@ -67,17 +67,17 @@ func getDefaultConfpath() (string, error) {
 
 func writeConfig(config TabletMapperConfig) {
 	if user, err := user.Current(); err != nil {
-		log.Printf("INFO: couldn't read current user %s ", err.Error())
+		log.Printf("ERROR: couldn't read current user %s ", err.Error())
 	} else {
 		confPath := path.Join(user.HomeDir, configFileName)
 		log.Printf("INFO: writing to file %s", confPath)
 		if file, err := os.Create(confPath); err != nil {
-			log.Printf("INFO: couldn't write to config file %s. %s", confPath, err.Error())
+			log.Printf("ERROR: couldn't write to config file %s. %s", confPath, err.Error())
 		} else {
 			defer file.Close()
 			buf, _ := json.MarshalIndent(config, "", "  ")
 			if _, err = file.Write(buf); err != nil {
-				log.Printf("INFO: couldn't write to config file %s. %s", confPath, err.Error())
+				log.Printf("ERROR: couldn't write to config file %s. %s", confPath, err.Error())
 			}
 			//log.Printf("INFO: wrote config: %s",buf )
 			file.Sync()
@@ -101,11 +101,11 @@ func (input Input) mapButtons() error {
 	return nil
 }
 
-func (input Input) mapToArea(matrix [4]float32) error {
+func (input Input) mapToArea(matrix CoordinationMatrix) error {
 
-	c := strings.Split(fmt.Sprintf("%f %f %f %f", matrix[0], matrix[1], matrix[2], matrix[3]), " ")
+	c := strings.Split(fmt.Sprintf("%f %f %f %f %f %f %f %f %f", matrix[0], matrix[1], matrix[2], matrix[3], matrix[4], matrix[5], matrix[6], matrix[7], matrix[8]), " ")
 	setCoordMatrixCmd := exec.Command("xinput", "set-prop", input.name, "--type=float",
-		"Coordinate Transformation Matrix", c[0], "0", c[1], "0", c[2], c[3], "0", "0", "1")
+		"Coordinate Transformation Matrix", c[0], c[1], c[2], c[3], c[4], c[5], c[6], c[7], c[8])
 	defer setCoordMatrixCmd.Wait()
 	if _, err := setCoordMatrixCmd.Output(); err != nil {
 		return fmt.Errorf("Couldn't map inputs %w", err)
@@ -114,7 +114,41 @@ func (input Input) mapToArea(matrix [4]float32) error {
 	return nil
 }
 
-func getCoordMappingForWindow(x, y, w, h int) [4]float32 {
+type CoordinationMatrix [9]float32
+
+func  multiplyCoordMatrices(c, r CoordinationMatrix) CoordinationMatrix {
+
+	return CoordinationMatrix{
+        (c[0+0]*r[0]+c[1+0]*r[3]+c[2+0]*r[6]), (c[0+0]*r[0+1]+c[1+0]*r[3+1]+c[2+0]*r[6+1]), (c[0+0]*r[0+2]+c[1+0]*r[3+2]+c[2+0]*r[6+2]),
+        (c[0+3]*r[0]+c[1+3]*r[3]+c[2+3]*r[6]), (c[0+3]*r[0+1]+c[1+3]*r[3+1]+c[2+3]*r[6+1]), (c[0+3]*r[0+2]+c[1+3]*r[3+2]+c[2+3]*r[6+2]),
+        (c[0+6]*r[0]+c[1+6]*r[3]+c[2+6]*r[6]), (c[0+6]*r[0+1]+c[1+6]*r[3+1]+c[2+6]*r[6+1]), (c[0+6]*r[0+2]+c[1+6]*r[3+2]+c[2+6]*r[6+2]),
+    }
+
+}
+
+func (c CoordinationMatrix) rotateRight90() CoordinationMatrix {
+
+    // right 90 rotation matrix
+	r := CoordinationMatrix{
+		0.0, 1.0, 0.0,
+		-1.0, 0.0, 1.0,
+		0.0, 0.0, 1.0,
+	}
+	return multiplyCoordMatrices(c, r)
+}
+
+func (c CoordinationMatrix) rotateLeft90() CoordinationMatrix {
+
+    // left 90 rotation matrix
+    r := CoordinationMatrix{
+		0.0, -1.0, 1.0,
+		1.0, 0.0, 0.0,
+		0.0, 0.0, 1.0,
+	}
+	return multiplyCoordMatrices(c, r)
+}
+
+func getCoordMappingForWindow(x, y, w, h int) CoordinationMatrix {
 	monitor_count := rl.GetMonitorCount()
 	screen_width := 0
 	screen_height := 0
@@ -143,11 +177,10 @@ func getCoordMappingForWindow(x, y, w, h int) [4]float32 {
 	c3 := window_posY / float32(screen_height)
 	//xinput set-prop "<input-name>" --type=float "Coordinate Transformation Matrix" %f 0 %f 0 %f %f 0 0 1
 
-	return [4]float32{c0, c1, c2, c3}
-
+	return CoordinationMatrix{c0, 0.0, c1, 0.0, c2, c3, 0.0, 0.0, 1.0}
 }
 
-func getCoordMappingFromCurrentWindow() [4]float32 {
+func getCoordMappingFromCurrentWindow() CoordinationMatrix {
 	curr_height := rl.GetRenderHeight()
 	curr_width := rl.GetRenderWidth()
 	window_pos := rl.GetWindowPosition()
@@ -257,8 +290,6 @@ func getWindowList() []window {
 func main() {
 	windowList := getWindowList()
 
-	log.Printf("INFO: %+v", windowList)
-
 	args := os.Args
 	climode := false
 	if len(args) > 1 {
@@ -298,8 +329,6 @@ func main() {
 		inputs[i].config = config[inputs[i].name]
 	}
 
-	log.Printf("INFO: inputs '%v'", inputs)
-
 	if climode {
 		return
 	}
@@ -324,6 +353,7 @@ func main() {
 
 	var selectedWindow int32
 	windowEditMode := false
+    rotate := false
 
 	for !rl.WindowShouldClose() {
 		if rl.IsWindowResized() {
@@ -355,29 +385,17 @@ func main() {
 		}
 		y += 30.0
 
-		if loadConfig := gui.Button(rl.NewRectangle(x, y, 200, 40), "Load Config"); loadConfig {
-			config, _ := readConfigFromFile(confPath)
-			for i, _ := range inputs {
-				input := &inputs[i]
-				if input.selected {
-					input.config = config[input.name]
-					if err := input.mapToArea(input.config.CoordMatrix); err != nil {
-					}
-					if err := input.mapButtons(); err != nil {
-					}
-				}
-			}
-		}
-		
-        if saveConfig := gui.Button(rl.NewRectangle(x + 250, y , 200, 40), "Save Current Config"); saveConfig {
-			writeConfig(config)
-		}
-		y += 50.0
+        rotate = gui.CheckBox(rl.NewRectangle(x, y, 20, 20), "Rotate Left 90deg", rotate)
+        y += 40
 
 		if mapArea := gui.Button(rl.NewRectangle(x, y, 200, 40), "Map Current Area"); mapArea {
 			for _, input := range inputs {
 				if input.selected {
-					if err := input.mapToArea(getCoordMappingFromCurrentWindow()); err != nil {
+                    coordMatrix := getCoordMappingFromCurrentWindow()
+                    if rotate {
+                        coordMatrix = coordMatrix.rotateLeft90()
+                    }
+					if err := input.mapToArea(coordMatrix); err != nil {
 					}
 					if err := input.mapButtons(); err != nil {
 					}
@@ -407,7 +425,11 @@ func main() {
 
 		if gui.Button(rl.NewRectangle(x+250, y, 200, 40), "Map to Window") {
 			window := windowList[selectedWindow]
-			coordMatrix := getCoordMappingForWindow(window.xoffset, window.yoffset+30, window.width, window.height-60)
+            log.Printf("INFO: mapping to window %+v", window)
+			coordMatrix := getCoordMappingForWindow(window.xoffset, window.yoffset, window.width, window.height)
+            if rotate {
+                coordMatrix = coordMatrix.rotateLeft90()
+            }
 			for i := 0; i < len(inputs); i++ {
 				if inputs[i].selected {
 					if err := inputs[i].mapToArea(coordMatrix); err != nil {
@@ -418,6 +440,24 @@ func main() {
 					}
 				}
 			}
+		}
+		y += 50.0
+		if gui.Button(rl.NewRectangle(x, y, 200, 40), "Load Config") {
+			config, _ := readConfigFromFile(confPath)
+			for i, _ := range inputs {
+				input := &inputs[i]
+				if input.selected {
+					input.config = config[input.name]
+					if err := input.mapToArea(input.config.CoordMatrix); err != nil {
+					}
+					if err := input.mapButtons(); err != nil {
+					}
+				}
+			}
+		}
+
+		if gui.Button(rl.NewRectangle(x+250, y, 200, 40), "Save Current Config") {
+			writeConfig(config)
 		}
 
 		rl.EndDrawing()
