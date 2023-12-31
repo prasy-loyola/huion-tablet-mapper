@@ -101,11 +101,23 @@ func (input Input) mapButtons() error {
 	return nil
 }
 
-func (input Input) mapToArea(matrix CoordinationMatrix) error {
+func (input Input) mapToArea(m CoordinationMatrix) error {
 
-	c := strings.Split(fmt.Sprintf("%f %f %f %f %f %f %f %f %f", matrix[0], matrix[1], matrix[2], matrix[3], matrix[4], matrix[5], matrix[6], matrix[7], matrix[8]), " ")
-	setCoordMatrixCmd := exec.Command("xinput", "set-prop", input.name, "--type=float",
-		"Coordinate Transformation Matrix", c[0], c[1], c[2], c[3], c[4], c[5], c[6], c[7], c[8])
+	//xinput set-prop "<input-name>" --type=float "Coordinate Transformation Matrix" %f 0 %f 0 %f %f 0 0 1
+	args := make([]string, 0)
+	args = append(args, "set-prop")
+	args = append(args, input.name)
+	args = append(args, "--type=float")
+	args = append(args, "Coordinate Transformation Matrix")
+
+	for _, row := range m {
+		for _, val := range row {
+			args = append(args, fmt.Sprintf("%f", val))
+		}
+	}
+	log.Printf("INFO: area %+v", args)
+
+	setCoordMatrixCmd := exec.Command("xinput", args...)
 	defer setCoordMatrixCmd.Wait()
 	if _, err := setCoordMatrixCmd.Output(); err != nil {
 		return fmt.Errorf("Couldn't map inputs %w", err)
@@ -114,36 +126,43 @@ func (input Input) mapToArea(matrix CoordinationMatrix) error {
 	return nil
 }
 
-type CoordinationMatrix [9]float32
+type CoordMatrixRow [3]float32
+type CoordinationMatrix [3]CoordMatrixRow
 
-func  multiplyCoordMatrices(c, r CoordinationMatrix) CoordinationMatrix {
+func multiplyCoordMatrices(c, r CoordinationMatrix) CoordinationMatrix {
 
-	return CoordinationMatrix{
-        (c[0+0]*r[0]+c[1+0]*r[3]+c[2+0]*r[6]), (c[0+0]*r[0+1]+c[1+0]*r[3+1]+c[2+0]*r[6+1]), (c[0+0]*r[0+2]+c[1+0]*r[3+2]+c[2+0]*r[6+2]),
-        (c[0+3]*r[0]+c[1+3]*r[3]+c[2+3]*r[6]), (c[0+3]*r[0+1]+c[1+3]*r[3+1]+c[2+3]*r[6+1]), (c[0+3]*r[0+2]+c[1+3]*r[3+2]+c[2+3]*r[6+2]),
-        (c[0+6]*r[0]+c[1+6]*r[3]+c[2+6]*r[6]), (c[0+6]*r[0+1]+c[1+6]*r[3+1]+c[2+6]*r[6+1]), (c[0+6]*r[0+2]+c[1+6]*r[3+2]+c[2+6]*r[6+2]),
+	result := CoordinationMatrix{}
+    for ridx, row := range c {
+        for j := 0; j < 3; j++ {
+            sum := float32(0)
+            for i := 0; i < 3; i++ {
+                sum += row[i] * r[i][j]
+            }
+            result[ridx][j] = sum
+        }
     }
 
-}
-
-func (c CoordinationMatrix) rotateRight90() CoordinationMatrix {
-
-    // right 90 rotation matrix
-	r := CoordinationMatrix{
-		0.0, 1.0, 0.0,
-		-1.0, 0.0, 1.0,
-		0.0, 0.0, 1.0,
-	}
-	return multiplyCoordMatrices(c, r)
+	return result
 }
 
 func (c CoordinationMatrix) rotateLeft90() CoordinationMatrix {
 
-    // left 90 rotation matrix
-    r := CoordinationMatrix{
-		0.0, -1.0, 1.0,
-		1.0, 0.0, 0.0,
-		0.0, 0.0, 1.0,
+	// tablet right 90 rotation matrix - screen left 90 rotation 
+	r := CoordinationMatrix{
+		{0.0, 1.0, 0.0},
+		{-1.0, 0.0, 1.0},
+		{0.0, 0.0, 1.0},
+	}
+	return multiplyCoordMatrices(c, r)
+}
+
+func (c CoordinationMatrix) rotateRight90() CoordinationMatrix {
+
+	// tablet left 90 rotation matrix - screen right 90 rotation 
+	r := CoordinationMatrix{
+		{0.0, -1.0, 1.0},
+		{1.0, 0.0, 0.0},
+		{0.0, 0.0, 1.0},
 	}
 	return multiplyCoordMatrices(c, r)
 }
@@ -175,9 +194,8 @@ func getCoordMappingForWindow(x, y, w, h int) CoordinationMatrix {
 	c1 := window_posX / float32(screen_width)
 	// c3 = touch_area_y_offset / total_height
 	c3 := window_posY / float32(screen_height)
-	//xinput set-prop "<input-name>" --type=float "Coordinate Transformation Matrix" %f 0 %f 0 %f %f 0 0 1
 
-	return CoordinationMatrix{c0, 0.0, c1, 0.0, c2, c3, 0.0, 0.0, 1.0}
+	return CoordinationMatrix{{c0, 0.0, c1}, {0.0, c2, c3}, {0.0, 0.0, 1.0}}
 }
 
 func getCoordMappingFromCurrentWindow() CoordinationMatrix {
@@ -319,8 +337,8 @@ func main() {
 	}
 	if config, err = readConfigFromFile(confPath); err != nil {
 		log.Printf("WARN: Couldn't load config %s", err.Error())
+		config = TabletMapperConfig{}
 	}
-
 	if inputs, err = getInputs(); err != nil {
 		log.Fatalf("ERROR: Couldn't read inputs %s", err.Error())
 	}
@@ -353,7 +371,7 @@ func main() {
 
 	var selectedWindow int32
 	windowEditMode := false
-    rotate := false
+	rotate := false
 
 	for !rl.WindowShouldClose() {
 		if rl.IsWindowResized() {
@@ -385,16 +403,16 @@ func main() {
 		}
 		y += 30.0
 
-        rotate = gui.CheckBox(rl.NewRectangle(x, y, 20, 20), "Rotate Left 90deg", rotate)
-        y += 40
+		rotate = gui.CheckBox(rl.NewRectangle(x, y, 20, 20), "Rotate Right 90deg", rotate)
+		y += 40
 
 		if mapArea := gui.Button(rl.NewRectangle(x, y, 200, 40), "Map Current Area"); mapArea {
 			for _, input := range inputs {
 				if input.selected {
-                    coordMatrix := getCoordMappingFromCurrentWindow()
-                    if rotate {
-                        coordMatrix = coordMatrix.rotateLeft90()
-                    }
+					coordMatrix := getCoordMappingFromCurrentWindow()
+					if rotate {
+						coordMatrix = coordMatrix.rotateRight90()
+					}
 					if err := input.mapToArea(coordMatrix); err != nil {
 					}
 					if err := input.mapButtons(); err != nil {
@@ -425,11 +443,11 @@ func main() {
 
 		if gui.Button(rl.NewRectangle(x+250, y, 200, 40), "Map to Window") {
 			window := windowList[selectedWindow]
-            log.Printf("INFO: mapping to window %+v", window)
+			log.Printf("INFO: mapping to window %+v", window)
 			coordMatrix := getCoordMappingForWindow(window.xoffset, window.yoffset, window.width, window.height)
-            if rotate {
-                coordMatrix = coordMatrix.rotateLeft90()
-            }
+			if rotate {
+				coordMatrix = coordMatrix.rotateLeft90()
+			}
 			for i := 0; i < len(inputs); i++ {
 				if inputs[i].selected {
 					if err := inputs[i].mapToArea(coordMatrix); err != nil {
