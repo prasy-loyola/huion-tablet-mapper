@@ -200,7 +200,7 @@ func getInputs() ([]Input, error) {
 	inputs := strings.Split(string(output), "\n")
 	tablets := make([]Input, 0)
 	for _, input := range inputs {
-		if strings.Contains(input, " stylus") || strings.Contains(input, " pad") {
+		if strings.Contains(input, " stylus") || strings.Contains(input, " pad") || strings.Contains(input, "Tablet") {
 			xinputFindIdCmd := exec.Command("xinput", "--list", "--id-only", input)
 			defer xinputListCmd.Wait()
 			if output, err = xinputFindIdCmd.Output(); err != nil {
