@@ -254,7 +254,7 @@ func getWindowList() []window {
 			}
 			word = append(word, b)
 		}
-		return string(word), string(text[i:len(text)])
+		return string(word), string(text[i:])
 	}
 
 	for _, line := range strings.Split(string(out), "\n") {
@@ -444,7 +444,7 @@ func main() {
 		y += 50.0
 		if gui.Button(rl.NewRectangle(x, y, 200, 40), "Load Config") {
 			config, _ := readConfigFromFile(confPath)
-			for i, _ := range inputs {
+			for i := range inputs {
 				input := &inputs[i]
 				if input.selected {
 					input.config = config[input.name]
