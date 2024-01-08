@@ -432,9 +432,13 @@ func main() {
 			options += w.appName
 		}
 
-		gui.Unlock()
-		if gui.DropdownBox(rl.NewRectangle(x, y, 200, 40), options, &selectedWindow, windowEditMode) {
-			windowEditMode = !windowEditMode
+
+        var x1, y1 = x, y
+		var dropdown = func() {
+			gui.Unlock()
+			if gui.DropdownBox(rl.NewRectangle(x1, y1, 200, 40), options, &selectedWindow, windowEditMode) {
+				windowEditMode = !windowEditMode
+			}
 		}
 
 		if gui.Button(rl.NewRectangle(x+205, y, 40, 40), "(R)") {
@@ -473,11 +477,12 @@ func main() {
 				}
 			}
 		}
-
-		if gui.Button(rl.NewRectangle(x+250, y, 200, 40), "Save Current Config") {
+		
+        if gui.Button(rl.NewRectangle(x+250, y, 200, 40), "Save Current Config") {
 			writeConfig(config)
 		}
 
+		dropdown()
 		rl.EndDrawing()
 	}
 
