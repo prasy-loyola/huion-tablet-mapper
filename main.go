@@ -132,22 +132,22 @@ type CoordinationMatrix [3]CoordMatrixRow
 func multiplyCoordMatrices(c, r CoordinationMatrix) CoordinationMatrix {
 
 	result := CoordinationMatrix{}
-    for ridx, row := range c {
-        for j := 0; j < 3; j++ {
-            sum := float32(0)
-            for i := 0; i < 3; i++ {
-                sum += row[i] * r[i][j]
-            }
-            result[ridx][j] = sum
-        }
-    }
+	for ridx, row := range c {
+		for j := 0; j < 3; j++ {
+			sum := float32(0)
+			for i := 0; i < 3; i++ {
+				sum += row[i] * r[i][j]
+			}
+			result[ridx][j] = sum
+		}
+	}
 
 	return result
 }
 
 func (c CoordinationMatrix) rotateLeft90() CoordinationMatrix {
 
-	// tablet right 90 rotation matrix - screen left 90 rotation 
+	// tablet right 90 rotation matrix - screen left 90 rotation
 	r := CoordinationMatrix{
 		{0.0, 1.0, 0.0},
 		{-1.0, 0.0, 1.0},
@@ -158,7 +158,7 @@ func (c CoordinationMatrix) rotateLeft90() CoordinationMatrix {
 
 func (c CoordinationMatrix) rotateRight90() CoordinationMatrix {
 
-	// tablet left 90 rotation matrix - screen right 90 rotation 
+	// tablet left 90 rotation matrix - screen right 90 rotation
 	r := CoordinationMatrix{
 		{0.0, -1.0, 1.0},
 		{1.0, 0.0, 0.0},
@@ -305,6 +305,7 @@ func getWindowList() []window {
 
 	return windowList
 }
+
 func main() {
 	windowList := getWindowList()
 
@@ -379,6 +380,7 @@ func main() {
 			new_height := int(float32(curr_width) * (float32(2.23) / float32(4.0)))
 			rl.SetWindowSize(curr_width, new_height)
 		}
+
 		rl.BeginDrawing()
 		rl.ClearBackground(rl.RayWhite)
 		gui.SetStyle(gui.DEFAULT, gui.TEXT_SIZE, 17)
