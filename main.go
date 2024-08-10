@@ -34,11 +34,11 @@ const configFileName = ".tablet-mapper.conf"
 
 func readConfigFromFile(confPath string) (TabletMapperConfig, error) {
 	if file, err := os.Open(confPath); err != nil {
-		log.Printf("ERROR: couldn't read from config file '%s'. %s", confPath, err.Error())
+		log.Printf("WARN: couldn't read from config file '%s'. %s", confPath, err.Error())
 	} else {
 		defer file.Close()
 		if buf, err := io.ReadAll(file); err != nil {
-			log.Printf("ERROR: read config %s", err.Error())
+			log.Printf("WARN: read config %s", err.Error())
 		} else {
 			var config TabletMapperConfig
 			if err = json.Unmarshal(buf, &config); err != nil {
@@ -126,10 +126,33 @@ func (input Input) mapToArea(m CoordinationMatrix) error {
 	return nil
 }
 
+var rotationCoordMatrices []CoordinationMatrix = []CoordinationMatrix{
+	CoordinationMatrix{ // 0 degree
+		{1.0, 0.0, 0.0},
+		{0.0, 1.0, 0.0},
+		{0.0, 0.0, 1.0},
+	},
+	CoordinationMatrix{ // 90 degree
+		{0.0, 1.0, 0.0},
+		{-1.0, 0.0, 1.0},
+		{0.0, 0.0, 1.0},
+	},
+	CoordinationMatrix{ //180 degree
+		{-1.0, 0.0, 1.0},
+		{0.0, -1.0, 1.0},
+		{0.0, 0.0, 1.0},
+	},
+	CoordinationMatrix{ // 270 degree
+		{0.0, -1.0, 1.0},
+		{1.0, 0.0, 0.0},
+		{0.0, 0.0, 1.0},
+	},
+}
+
 type CoordMatrixRow [3]float32
 type CoordinationMatrix [3]CoordMatrixRow
 
-func multiplyCoordMatrices(c, r CoordinationMatrix) CoordinationMatrix {
+func (c CoordinationMatrix) multiplyCoordMatrices(r CoordinationMatrix) CoordinationMatrix {
 
 	result := CoordinationMatrix{}
 	for ridx, row := range c {
@@ -148,23 +171,13 @@ func multiplyCoordMatrices(c, r CoordinationMatrix) CoordinationMatrix {
 func (c CoordinationMatrix) rotateLeft90() CoordinationMatrix {
 
 	// tablet right 90 rotation matrix - screen left 90 rotation
-	r := CoordinationMatrix{
-		{0.0, 1.0, 0.0},
-		{-1.0, 0.0, 1.0},
-		{0.0, 0.0, 1.0},
-	}
-	return multiplyCoordMatrices(c, r)
+	return c.multiplyCoordMatrices(rotationCoordMatrices[1])
 }
 
 func (c CoordinationMatrix) rotateRight90() CoordinationMatrix {
 
 	// tablet left 90 rotation matrix - screen right 90 rotation
-	r := CoordinationMatrix{
-		{0.0, -1.0, 1.0},
-		{1.0, 0.0, 0.0},
-		{0.0, 0.0, 1.0},
-	}
-	return multiplyCoordMatrices(c, r)
+	return c.multiplyCoordMatrices(rotationCoordMatrices[3])
 }
 
 func getCoordMappingForWindow(x, y, w, h int) CoordinationMatrix {
@@ -222,7 +235,7 @@ func getInputs() ([]Input, error) {
 			xinputFindIdCmd := exec.Command("xinput", "--list", "--id-only", input)
 			defer xinputListCmd.Wait()
 			if output, err = xinputFindIdCmd.Output(); err != nil {
-				return nil, fmt.Errorf("Couldn't read inputs %w", err)
+				return nil, fmt.Errorf("Couldn't read inputs  for %s %w", input, err)
 			}
 			var id int
 			if id, err = strconv.Atoi(strings.Split(string(output), "\n")[0]); err != nil {
@@ -372,7 +385,8 @@ func main() {
 
 	var selectedWindow int32
 	windowEditMode := false
-	rotate := false
+	rotate := 0
+	rotateOptions := []int{0, 90, 180, 270}
 
 	for !rl.WindowShouldClose() {
 		if rl.IsWindowResized() {
@@ -405,16 +419,22 @@ func main() {
 		}
 		y += 30.0
 
-		rotate = gui.CheckBox(rl.NewRectangle(x, y, 20, 20), "Rotate Right 90deg", rotate)
+        gui.Label(rl.NewRectangle(x,y,140,30), "Rotation (degrees)" )
+		for i, value := range rotateOptions {
+			selected := gui.Toggle(rl.NewRectangle(140 + x  + float32(i * 50), y, 40, 30), fmt.Sprintf("%d", value), rotate == i)
+			if selected {
+				rotate = i
+			}
+		}
 		y += 40
+		// rotate = gui.CheckBox(rl.NewRectangle(x, y, 20, 20), "Rotate Right 90deg", rotate)
+		// y += 40
 
 		if mapArea := gui.Button(rl.NewRectangle(x, y, 200, 40), "Map Current Area"); mapArea {
 			for _, input := range inputs {
 				if input.selected {
 					coordMatrix := getCoordMappingFromCurrentWindow()
-					if rotate {
-						coordMatrix = coordMatrix.rotateRight90()
-					}
+					coordMatrix = coordMatrix.multiplyCoordMatrices(rotationCoordMatrices[rotate])
 					if err := input.mapToArea(coordMatrix); err != nil {
 					}
 					if err := input.mapButtons(); err != nil {
@@ -434,8 +454,7 @@ func main() {
 			options += w.appName
 		}
 
-
-        var x1, y1 = x, y
+		var x1, y1 = x, y
 		var dropdown = func() {
 			gui.Unlock()
 			if gui.DropdownBox(rl.NewRectangle(x1, y1, 200, 40), options, &selectedWindow, windowEditMode) {
@@ -451,9 +470,7 @@ func main() {
 			window := windowList[selectedWindow]
 			log.Printf("INFO: mapping to window %+v", window)
 			coordMatrix := getCoordMappingForWindow(window.xoffset, window.yoffset, window.width, window.height)
-			if rotate {
-				coordMatrix = coordMatrix.rotateLeft90()
-			}
+			coordMatrix = coordMatrix.multiplyCoordMatrices(rotationCoordMatrices[rotate])
 			for i := 0; i < len(inputs); i++ {
 				if inputs[i].selected {
 					if err := inputs[i].mapToArea(coordMatrix); err != nil {
@@ -479,8 +496,8 @@ func main() {
 				}
 			}
 		}
-		
-        if gui.Button(rl.NewRectangle(x+250, y, 200, 40), "Save Current Config") {
+
+		if gui.Button(rl.NewRectangle(x+250, y, 200, 40), "Save Current Config") {
 			writeConfig(config)
 		}
 

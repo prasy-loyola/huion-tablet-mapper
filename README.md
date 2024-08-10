@@ -10,6 +10,8 @@
 ### Map buttons in the tablet
 - https://github.com/DIGImend/digimend-kernel-drivers#enabling-wacom-xorg-driver
 
+### Wayland support
+https://unix.stackexchange.com/questions/696514/configuring-xp-pen-graphics-tablet-on-linux-specifically-wayland
 
 ```
 Section "InputClass"
