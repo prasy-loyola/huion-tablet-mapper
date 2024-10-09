@@ -16,6 +16,9 @@ import (
 
 func main() {
 	windowList := windows.GetWindowList()
+	rl.SetTraceLogLevel(rl.LogNone)
+	rl.SetConfigFlags(rl.FlagWindowResizable)
+	rl.SetConfigFlags(rl.FlagMsaa4xHint)
 
 	args := os.Args
 	climode := false
@@ -28,6 +31,11 @@ func main() {
 			climode = true
 		}
 	}
+    if (climode) {
+	    rl.SetConfigFlags(rl.FlagWindowHidden)
+    }
+	rl.InitWindow(800, 800, "Tablet Mapper")
+	defer rl.CloseWindow()
 
 	var inputs []tm_inputs.Input
 	var err error
@@ -50,21 +58,36 @@ func main() {
 	}
 	if inputs, err = tm_inputs.GetInputs(); err != nil {
 		log.Fatalf("ERROR: Couldn't read inputs %s", err.Error())
+        inputs = make([]tm_inputs.Input, 0)
 	}
+    log.Printf("Window list %v", windowList)
 
 	for i := 0; i < len(inputs); i++ {
-		inputs[i].Config = config[inputs[i].Name]
+        if config, ok := config[inputs[i].Name]; ok {
+            inputs[i].Config = config
+            input := inputs[i]
+            log.Printf("Input config: %v", input.Config)
+            if input.Config.MappingType == tm_inputs.INPUT_MAPPING_COORD_MATRIX {
+                input.MapToArea(input.Config.CoordMatrix)
+            } else if input.Config.MappingType == tm_inputs.INPUT_MAPPING_WINDOW {
+                for _, window := range windowList {
+                    if window.AppName == input.Config.WindowName {
+                        log.Printf("Mapping to window %s", window)
+                        coordMatrix := window.GetCoordMappingForWindow()
+                        log.Printf("window coordinates %v", coordMatrix)
+                        coordMatrix = coordMatrix.MultiplyCoordMatrices(tm_inputs.GetCoordinateMatrix(input.Config.Rotation))
+                        log.Printf("transformed coordinates %v", coordMatrix)
+                        input.MapToArea(coordMatrix)
+                    }
+                }
+            }
+        }
 	}
 
 	if climode {
 		return
 	}
 
-	rl.SetTraceLogLevel(rl.LogNone)
-	rl.SetConfigFlags(rl.FlagWindowResizable)
-	rl.SetConfigFlags(rl.FlagMsaa4xHint)
-	rl.InitWindow(800, 800, "Tablet Mapper")
-	defer rl.CloseWindow()
 	fontFilePath := ".temp.ttf"
 	err = os.WriteFile(fontFilePath, FontAsBytes, fs.ModePerm)
 	font := rl.LoadFontEx(fontFilePath, 30, nil)
@@ -122,14 +145,12 @@ func main() {
 			}
 		}
 		y += 40
-		// rotate = gui.CheckBox(rl.NewRectangle(x, y, 20, 20), "Rotate Right 90deg", rotate)
-		// y += 40
 
 		if mapArea := gui.Button(rl.NewRectangle(x, y, 200, 40), "Map Current Area"); mapArea {
 			for _, input := range inputs {
 				if input.Selected {
 					coordMatrix := windows.GetCoordMappingFromCurrentWindow()
-					coordMatrix = coordMatrix.MultiplyCoordMatrices(tm_inputs.RotationCoordMatrices[rotate])
+					coordMatrix = coordMatrix.MultiplyCoordMatrices(tm_inputs.GetCoordinateMatrix(rotateOptions[rotate]))
 					if err := input.MapToArea(coordMatrix); err != nil {
 					}
 					if err := input.MapButtons(); err != nil {
@@ -162,20 +183,30 @@ func main() {
 		}
 
 		if gui.Button(rl.NewRectangle(x+250, y, 200, 40), "Map to Window") {
-			window := windowList[selectedWindow]
-			log.Printf("INFO: mapping to window %+v", window)
-			coordMatrix := windows.GetCoordMappingForWindow(window.Xoffset, window.Yoffset, window.Width, window.Height)
-			coordMatrix = coordMatrix.MultiplyCoordMatrices(tm_inputs.RotationCoordMatrices[rotate])
-			for i := 0; i < len(inputs); i++ {
-				if inputs[i].Selected {
-					if err := inputs[i].MapToArea(coordMatrix); err != nil {
-					}
-					inputs[i].Config.CoordMatrix = coordMatrix
-					config[inputs[i].Name] = inputs[i].Config
-					if err := inputs[i].MapButtons(); err != nil {
-					}
-				}
-			}
+			windowName := windowList[selectedWindow].AppName
+			windowList = windows.GetWindowList()
+
+            for _, window := range windowList {
+                if window.AppName == windowName {
+                    log.Printf("INFO: mapping to window %+v", window)
+                    coordMatrix := window.GetCoordMappingForWindow()
+                    coordMatrix = coordMatrix.MultiplyCoordMatrices(tm_inputs.GetCoordinateMatrix(rotateOptions[rotate]))
+                    for i := 0; i < len(inputs); i++ {
+                        if inputs[i].Selected {
+                            if err := inputs[i].MapToArea(coordMatrix); err != nil {
+                            }
+                            inputs[i].Config.CoordMatrix = coordMatrix
+                            inputs[i].Config.Rotation = rotateOptions[rotate]
+                            inputs[i].Config.MappingType = tm_inputs.INPUT_MAPPING_WINDOW
+                            inputs[i].Config.WindowName = window.AppName
+                            config[inputs[i].Name] = inputs[i].Config
+                            if err := inputs[i].MapButtons(); err != nil {
+                            }
+                        }
+                    }
+                }
+            }
+            
 		}
 		y += 50.0
 		if gui.Button(rl.NewRectangle(x, y, 200, 40), "Load Config") {

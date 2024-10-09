@@ -1,13 +1,14 @@
 package windows
 
 import (
+	rl "github.com/gen2brain/raylib-go/raylib"
 	"log"
 	"os/exec"
 	"strconv"
 	"strings"
 	"tablet_mapper/inputs"
-	rl "github.com/gen2brain/raylib-go/raylib"
 )
+
 type Window struct {
 	Id          string
 	DesktopId   int
@@ -67,14 +68,18 @@ func GetWindowList() []Window {
 		w.Height, _ = strconv.Atoi(height)
 		w.MachineName = machineName
 		w.Title = title
-		chunks := strings.Split(title, " ")
+		chunks := strings.Split(title, "-")
 		w.AppName = chunks[len(chunks)-1]
 		windowList = append(windowList, w)
 	}
 
 	return windowList
 }
-func GetCoordMappingForWindow(x, y, w, h int) inputs.CoordinationMatrix {
+func (win Window) GetCoordMappingForWindow() inputs.CoordinationMatrix {
+	x := win.Xoffset
+	y := win.Yoffset
+	w := win.Width
+	h := win.Height
 	monitor_count := rl.GetMonitorCount()
 	screen_width := 0
 	screen_height := 0
@@ -109,5 +114,11 @@ func GetCoordMappingFromCurrentWindow() inputs.CoordinationMatrix {
 	curr_height := rl.GetRenderHeight()
 	curr_width := rl.GetRenderWidth()
 	window_pos := rl.GetWindowPosition()
-	return GetCoordMappingForWindow(int(window_pos.X), int(window_pos.Y), curr_width, curr_height)
+	window := Window{
+		Xoffset: int(window_pos.X),
+		Yoffset: int(window_pos.Y),
+		Width:   curr_width,
+		Height:  curr_height,
+	}
+	return window.GetCoordMappingForWindow()
 }

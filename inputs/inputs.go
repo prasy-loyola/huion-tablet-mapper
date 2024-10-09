@@ -8,11 +8,20 @@ import (
 	"strings"
 )
 
+const (
+	INPUT_MAPPING_COORD_MATRIX = "transformation_matrix"
+	INPUT_MAPPING_WINDOW       = "window"
+)
+
+type InputMappingType string
+
 type InputConfig struct {
 	Buttons     map[string]string  `json:"buttons"`
 	CoordMatrix CoordinationMatrix `json:"coordMatrix"`
+	WindowName  string             `json:"widowName"`
+	Rotation    int                `json:"rotation"`
+	MappingType InputMappingType   `json:"mappingType"`
 }
-
 
 func (input Input) MapButtons() error {
 
@@ -31,6 +40,7 @@ func (input Input) MapButtons() error {
 func (input Input) MapToArea(m CoordinationMatrix) error {
 
 	//xinput set-prop "<input-name>" --type=float "Coordinate Transformation Matrix" %f 0 %f 0 %f %f 0 0 1
+	log.Printf("Coordination Matrix: %v", m)
 	args := make([]string, 0)
 	args = append(args, "set-prop")
 	args = append(args, input.Name)
@@ -53,7 +63,22 @@ func (input Input) MapToArea(m CoordinationMatrix) error {
 	return nil
 }
 
-var RotationCoordMatrices []CoordinationMatrix = []CoordinationMatrix{
+func GetCoordinateMatrix(angle int) CoordinationMatrix {
+	switch angle {
+	case 0:
+		return rotationCoordMatrices[0]
+	case 90:
+		return rotationCoordMatrices[1]
+	case 180:
+		return rotationCoordMatrices[2]
+	case 270:
+		return rotationCoordMatrices[3]
+	default:
+		return rotationCoordMatrices[0]
+	}
+}
+
+var rotationCoordMatrices []CoordinationMatrix = []CoordinationMatrix{
 	{ // 0 degree
 		{1.0, 0.0, 0.0},
 		{0.0, 1.0, 0.0},
@@ -95,18 +120,6 @@ func (c CoordinationMatrix) MultiplyCoordMatrices(r CoordinationMatrix) Coordina
 	return result
 }
 
-func (c CoordinationMatrix) rotateLeft90() CoordinationMatrix {
-
-	// tablet right 90 rotation matrix - screen left 90 rotation
-	return c.MultiplyCoordMatrices(RotationCoordMatrices[1])
-}
-
-func (c CoordinationMatrix) rotateRight90() CoordinationMatrix {
-
-	// tablet left 90 rotation matrix - screen right 90 rotation
-	return c.MultiplyCoordMatrices(RotationCoordMatrices[3])
-}
-
 func GetInputs() ([]Input, error) {
 
 	xinputListCmd := exec.Command("xinput", "--list", "--name-only")
@@ -140,6 +153,7 @@ func GetInputs() ([]Input, error) {
 	xinputListCmd.Wait()
 	return tablets, err
 }
+
 type Input struct {
 	Id       int
 	Name     string
