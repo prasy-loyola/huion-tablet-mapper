@@ -60,7 +60,9 @@ func main() {
 		log.Fatalf("ERROR: Couldn't read inputs %s", err.Error())
         inputs = make([]tm_inputs.Input, 0)
 	}
+
     log.Printf("Window list %v", windowList)
+    log.Printf("Input list %v", inputs)
 
 	for i := 0; i < len(inputs); i++ {
         if config, ok := config[inputs[i].Name]; ok {

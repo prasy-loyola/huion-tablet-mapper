@@ -13,11 +13,13 @@
 ### Wayland support
 https://unix.stackexchange.com/questions/696514/configuring-xp-pen-graphics-tablet-on-linux-specifically-wayland
 
+path: "/etc/X11/xorg.conf.d/10-tablet.conf"
+
 ```
 Section "InputClass"
-    Identifier "Tablet"
-    Driver "wacom"
-    MatchDevicePath "/dev/input/event*"
-    MatchUSBID "<VID>:<PID>"
+  Identifier "Tablet"
+  Driver "wacom"
+  MatchDevicePath "/dev/input/event*"
+  MatchUSBID "256c:006e"
 EndSection
 ```
